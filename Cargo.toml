@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["crates/serai"]
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
+opt-level = "s"
+panic = "abort"
