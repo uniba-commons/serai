@@ -5,6 +5,7 @@
 ## Install
 
 ```sh
-brew install uniba-commons/tap/serai
+brew tap uniba-commons/tap
+brew install serai
 ```
 
