@@ -24,8 +24,8 @@ enum Cmd {
         /// name of the serai (a caravan-flavored one is generated when omitted)
         name: Option<String>,
     },
-    /// Ship an artifact
-    Ship {
+    /// Spread an artifact in the courtyard
+    Spread {
         path: PathBuf,
         /// tag — a one-line note attached to the artifact
         #[arg(short = 'm', long)]
@@ -37,8 +37,8 @@ enum Cmd {
     Artifacts,
     /// Move to a serai — or without arguments, see where you are staying
     Stay { serai: Option<String> },
-    /// Unpack an artifact into a local file
-    Unpack {
+    /// Take an artifact home as a local file
+    Take {
         /// filename or artifact id
         target: String,
         /// output path (defaults to the current directory)
@@ -46,8 +46,8 @@ enum Cmd {
         output: Option<PathBuf>,
         serai: Option<String>,
     },
-    /// Visit the courtyard in your browser
-    Visit { serai: Option<String> },
+    /// View the courtyard in your browser
+    View { serai: Option<String> },
     /// Resident agent (normally spawned automatically)
     Agent,
 }
@@ -103,15 +103,15 @@ async fn main() -> Result<()> {
             println!("  {}\n", res["ticket"].as_str().unwrap_or(""));
             Ok(())
         }
-        Cmd::Ship { path, tag, serai } => {
+        Cmd::Spread { path, tag, serai } => {
             let path = path.canonicalize()?;
             let res = client::post(
-                "/api/ship",
+                "/api/spread",
                 serde_json::json!({ "path": path, "tag": tag, "serai": serai }),
             )
             .await?;
             println!(
-                "shipped {} to {} ({} bytes)",
+                "spread {} at {} ({} bytes)",
                 res["filename"].as_str().unwrap_or("?"),
                 res["serai"].as_str().unwrap_or("?"),
                 res["size"]
@@ -184,7 +184,7 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Unpack { target, output, serai } => {
+        Cmd::Take { target, output, serai } => {
             let out = output.unwrap_or_else(|| PathBuf::from("."));
             let out = if out.is_absolute() {
                 out
@@ -192,18 +192,18 @@ async fn main() -> Result<()> {
                 std::env::current_dir()?.join(out)
             };
             let res = client::post(
-                "/api/unpack",
+                "/api/take",
                 serde_json::json!({ "target": target, "out": out, "serai": serai }),
             )
             .await?;
             println!(
-                "unpacked {} ({} bytes)",
+                "took {} ({} bytes)",
                 res["path"].as_str().unwrap_or(""),
                 res["size"]
             );
             Ok(())
         }
-        Cmd::Visit { serai } => {
+        Cmd::View { serai } => {
             client::ensure_agent().await?;
             if let Some(s) = serai {
                 // joins on first contact (ticket) or switches the current serai (name)

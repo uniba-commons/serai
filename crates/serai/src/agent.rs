@@ -130,9 +130,9 @@ pub async fn run() -> Result<()> {
         .route("/api/places", get(places))
         .route("/api/serai", post(new_serai))
         .route("/api/stay", post(stay))
-        .route("/api/ship", post(ship))
+        .route("/api/spread", post(spread))
         .route("/api/artifacts", get(list_artifacts))
-        .route("/api/unpack", post(unpack_artifact))
+        .route("/api/take", post(take_artifact))
         .route("/artifacts/{id}/{filename}", get(serve_artifact))
         .fallback(get(courtyard))
         .with_state(state);
@@ -300,8 +300,8 @@ async fn set_stay(state: &Arc<AgentState>, ns_hex: &str) -> Result<()> {
 /// Resolves a serai spec (name, id prefix, ticket, or None = staying at) to an open Doc.
 ///
 /// `switch` decides whether this resolution moves the "staying at" pointer.
-/// Rule: looking around (ls / visit / unpack) never moves you; acting with an
-/// explicit destination (ship / stay / new) or arriving through the gate does.
+/// Rule: looking around (ls / view / take) never moves you; acting with an
+/// explicit destination (spread / stay / new) or arriving through the gate does.
 async fn resolve_place(
     state: &Arc<AgentState>,
     spec: Option<&str>,
@@ -475,7 +475,7 @@ async fn new_serai(
 }
 
 #[derive(Deserialize)]
-struct ShipReq {
+struct SpreadReq {
     path: PathBuf,
     tag: Option<String>,
     serai: Option<String>,
@@ -491,15 +491,15 @@ struct Artifact {
     author: String,
 }
 
-async fn ship(
+async fn spread(
     State(state): State<Arc<AgentState>>,
-    Json(req): Json<ShipReq>,
+    Json(req): Json<SpreadReq>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // shipping to a named serai is an explicit act: it moves the stay pointer
+    // spreading at a named serai is an explicit act: it moves the stay pointer
     let (serai_name, doc) = resolve_place(&state, req.serai.as_deref(), true).await?;
     let path = req.path.canonicalize().context("file not found")?;
     if !path.is_file() {
-        return Err(anyhow!("only single files can be shipped for now").into());
+        return Err(anyhow!("only single files can be spread for now").into());
     }
     let filename = path
         .file_name()
@@ -659,7 +659,7 @@ async fn serve_artifact(
 }
 
 #[derive(Deserialize)]
-struct UnpackReq {
+struct TakeReq {
     /// filename or artifact id (prefix)
     target: String,
     /// absolute output path
@@ -668,9 +668,9 @@ struct UnpackReq {
 }
 
 /// Exports a payload to a real file on disk (the CLI door).
-async fn unpack_artifact(
+async fn take_artifact(
     State(state): State<Arc<AgentState>>,
-    Json(req): Json<UnpackReq>,
+    Json(req): Json<TakeReq>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let (_, doc) = resolve_place(&state, req.serai.as_deref(), false).await?;
     let entries = doc.get_many(Query::key_prefix("artifacts/")).await?;
