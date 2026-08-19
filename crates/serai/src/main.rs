@@ -49,7 +49,20 @@ enum Cmd {
     /// View the courtyard in your browser
     View { serai: Option<String> },
     /// Resident agent (normally spawned automatically)
-    Agent,
+    Agent {
+        #[command(subcommand)]
+        cmd: Option<AgentCmd>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentCmd {
+    /// Show the resident agent's status
+    Status,
+    /// Stop the resident agent
+    Stop,
+    /// Restart the resident agent (picks up a freshly installed binary)
+    Restart,
 }
 
 /// A caravan-flavored name for a serai opened without one.
@@ -80,7 +93,41 @@ fn generate_name(taken: &[String]) -> String {
 #[tokio::main]
 async fn main() -> Result<()> {
     match Cli::parse().cmd {
-        Cmd::Agent => agent::run().await,
+        Cmd::Agent { cmd: None } => agent::run().await,
+        Cmd::Agent { cmd: Some(AgentCmd::Status) } => {
+            match client::agent_info().await {
+                Some(info) => {
+                    let version = info["version"].as_str().unwrap_or("pre-0.3.0");
+                    let pid = info["pid"]
+                        .as_u64()
+                        .map(|p| p.to_string())
+                        .unwrap_or_else(|| "?".into());
+                    println!("agent running (version {version})");
+                    println!("    pid   {pid}");
+                    println!("    url   {}", client::base_url());
+                }
+                None => println!("no agent running"),
+            }
+            Ok(())
+        }
+        Cmd::Agent { cmd: Some(AgentCmd::Stop) } => {
+            if client::stop_agent().await? {
+                println!("agent stopped");
+            } else {
+                println!("no agent running");
+            }
+            Ok(())
+        }
+        Cmd::Agent { cmd: Some(AgentCmd::Restart) } => {
+            client::stop_agent().await?;
+            client::ensure_agent().await?;
+            let version = client::agent_info()
+                .await
+                .and_then(|i| i["version"].as_str().map(str::to_string))
+                .unwrap_or_else(|| "?".into());
+            println!("agent restarted (version {version})");
+            Ok(())
+        }
         Cmd::New { name } => {
             let name = match name {
                 Some(name) => name,

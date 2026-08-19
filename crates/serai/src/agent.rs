@@ -35,6 +35,7 @@ struct AgentState {
     endpoint: Endpoint,
     config: Mutex<Config>,
     open_docs: Mutex<HashMap<NamespaceId, Doc>>,
+    shutdown: tokio::sync::Notify,
 }
 
 pub async fn run() -> Result<()> {
@@ -95,6 +96,7 @@ pub async fn run() -> Result<()> {
         endpoint,
         config: Mutex::new(Config::load()?),
         open_docs: Mutex::new(HashMap::new()),
+        shutdown: tokio::sync::Notify::new(),
     });
 
     // heal loop: entries whose content never finished downloading are not
@@ -125,8 +127,10 @@ pub async fn run() -> Result<()> {
     }
 
     let blobs_for_shutdown = state.blobs.clone();
+    let state_for_shutdown = state.clone();
     let app = Router::new()
         .route("/api/ping", get(ping))
+        .route("/api/shutdown", post(shutdown))
         .route("/api/places", get(places))
         .route("/api/serai", post(new_serai))
         .route("/api/stay", post(stay))
@@ -139,12 +143,13 @@ pub async fn run() -> Result<()> {
 
     eprintln!("[agent] listening on http://127.0.0.1:{port}");
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
+        .with_graceful_shutdown(async move {
             use tokio::signal::unix::{signal, SignalKind};
             let mut term = signal(SignalKind::terminate()).expect("signal handler");
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {}
                 _ = term.recv() => {}
+                _ = state_for_shutdown.shutdown.notified() => {}
             }
             eprintln!("[agent] shutting down");
         })
@@ -407,7 +412,16 @@ async fn ping(State(state): State<Arc<AgentState>>) -> Json<serde_json::Value> {
         "serai": true,
         "dir": serai_dir().display().to_string(),
         "endpoint": state.endpoint.id().to_string(),
+        "version": env!("CARGO_PKG_VERSION"),
+        "pid": std::process::id(),
     }))
+}
+
+/// The graceful way out: the CLI calls this to retire a stale agent
+/// (e.g. right after an upgrade) before spawning the new binary.
+async fn shutdown(State(state): State<Arc<AgentState>>) -> Json<serde_json::Value> {
+    state.shutdown.notify_one();
+    Json(serde_json::json!({ "ok": true }))
 }
 
 async fn places(State(state): State<Arc<AgentState>>) -> Result<Json<serde_json::Value>, AppError> {
